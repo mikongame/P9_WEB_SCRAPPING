@@ -2,12 +2,12 @@
   "name": "p9_web_scrapping",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "scrape": "node scraper.js",
-    "seed": "node seed.js",
-    "dev": "nodemon index.js"
+    "seed": "node scripts/seed.js",
+    "dev": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -16,8 +16,10 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
-    "mongoose": "^8.17.1",
+    "mongoose": "^8.18.0",
     "nodemon": "^3.1.10",
-    "puppeteer": "^24.16.0"
+    "puppeteer": "^24.16.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
