@@ -5,36 +5,46 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 
 const BASE = 'https://www.pccomponentes.com/';
-const MAX_PAGES_PER_SEARCH = 100;
+const MAX_PAGES_PER_SEARCH = 5;
 
 const SEARCH_TERMS = { 
-  portatiles: ['portátiles', 'laptop', 'macbook'],
-  smartphones: ['smartphone', 'móviles', 'iphone']
+  portatiles: ['portatiles', 'laptop', 'macbook'],
+  smartphones: ['smartphone', 'moviles', 'iphone'],
+  cajas: ['fractal design'],
+  placas: ['asus', 'msi', 'gigabyte'].flatMap(m => `placa ${m}`),
+  fuentes_alimentacion: ['corsair', 'asus'].flatMap(m => `alimentacion ${m} 850w`),
+  refrigeracion: ['corsair', 'asus', 'forgeon'].flatMap(m => `refrigeracion ${m} 360mm`)
 };
 
 const SELECTORS = {
   SEARCH_INPUTS: [
-    'input[type="search"]', 'input[placeholder*="Buscar"]', 'input[placeholder*="buscar"]', 
-    '#search', 'input[data-testid="search"]'
+    'input[type="search"]', 'input[placeholder*="Buscar"]', 'input[data-testid="search"]', '#search'
   ],
   PRODUCT_CARD: '.product-card, .c-product-card, [data-testid="product-card"], .sc-eIrltS',
-  NAME_SELECTORS: ['.product-card__title', '.c-product-card__title', 'h3', 'a[title]', '[data-testid="product-title"]'],
-  PRICE_SELECTORS: ['[data-e2e="price-card"]', '.sc-ldFCYb', '.product-card__price', '.c-product-card__price-actual', '.price'],
-  NEXT_BUTTONS: ['.c-pagination__next:not(.is-disabled)', 'a[rel="next"]:not(.disabled)', 'button[aria-label*="Siguiente"]:not([disabled])'],
+  NAME_SELECTORS: ['.product-card__title', '.c-product-card__title', 'h3', 'a[title]'],
+  PRICE_SELECTORS: ['[data-e2e="price-card"]', '.sc-ldFCYb', '.product-card__price', '.c-product-card__price-actual'],
+  NEXT_BUTTONS: [
+    'button[aria-label="Página siguiente"]',
+    'button[data-testid="icon_right"]',
+    '.paginator-module_iconButton__qFRLX',
+    '.c-pagination__next:not(.is-disabled)', 
+    'a[rel="next"]:not(.disabled)',
+     '.pagination .next'
+  ],
   VERIFICATION: ['#challenge-form', '.cf-turnstile', 'iframe[src*="cloudflare"]']
 };
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const randomSleep = (min, max) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
 
 async function acceptCookieAndModals(page) {
   const candidates = [
     '#cookies-accept-all', '#onetrust-accept-btn-handler', '#didomi-notice-agree-button',
-    'button[aria-label="Aceptar"]', 'button[data-qa="accept-cookies"]', '.cookie-accept'
+    'button[aria-label="Aceptar"]', 'button[data-qa="accept-cookies"]'
   ];
   for (const sel of candidates) {
     try { 
-      await page.click(sel, { timeout: 2000 }); 
-      await sleep(500);
+      await page.click(sel, { timeout: 1500 }); 
+      await randomSleep(200, 400);
       break; 
     } catch {}
   }
@@ -42,9 +52,8 @@ async function acceptCookieAndModals(page) {
 
 async function handleCheckIfBlocked(page) {
   for (const sel of SELECTORS.VERIFICATION) {
-    const isPresent = await page.$(sel);
-    if (isPresent) {
-      console.log('⚠️ [BLOQUEO] El control de humano parece estar bloqueando el proceso. Por favor, resuélvelo.');
+    if (await page.$(sel)) {
+      console.log('⚠️ [BLOQUEO] Control de humano detectado. Resuélvelo manualmente.');
       await page.waitForFunction((s) => !document.querySelector(s), { timeout: 60000 }, sel);
       console.log('✅ Continuando...');
       return true;
@@ -56,7 +65,7 @@ async function handleCheckIfBlocked(page) {
 async function openHome(page) {
   console.log('🏠 Cargando Home...');
   await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 40000 });
-  await sleep(1500);
+  await randomSleep(800, 1400);
   await acceptCookieAndModals(page);
 }
 
@@ -67,7 +76,9 @@ async function doSearch(page, term) {
     try {
       await page.waitForSelector(sel, { timeout: 10000 });
       await page.click(sel, { clickCount: 3 });
-      await page.type(sel, term, { delay: 60 });
+      
+      const charDelay = Math.floor(Math.random() * 40) + 30;
+      await page.type(sel, term, { delay: charDelay });
       await page.keyboard.press('Enter');
       found = true;
       break;
@@ -76,23 +87,20 @@ async function doSearch(page, term) {
     }
   }
   if (!found) throw new Error('Caja de búsqueda no encontrada.');
-  await sleep(2000);
+  await randomSleep(500, 1000);
   await acceptCookieAndModals(page);
 }
 
 async function loadAllProductsOnPage(page) {
   let lastCount = 0;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 4; i++) {
     const count = await page.evaluate((sel) => document.querySelectorAll(sel).length, SELECTORS.PRODUCT_CARD);
     if (count > lastCount) {
       lastCount = count;
-      await page.evaluate(() => window.scrollBy(0, 1000));
-      await sleep(800);
-    } else {
-      break;
-    }
+      await page.evaluate(() => window.scrollBy(0, 1200));
+      await randomSleep(200, 400);
+    } else break;
   }
-  console.log(`Página cargada con ${lastCount} productos.`);
 }
 
 async function extractProducts(page) {
@@ -106,45 +114,54 @@ async function extractProducts(page) {
           if (el) name = el.textContent?.trim() || el.getAttribute('title')?.trim() || '';
           if (name) break;
         }
-
         let price = '';
         for (const s of sel_price) {
           const el = card.querySelector(s);
           if (el) price = el.textContent?.trim() || '';
           if (price && price.includes('€')) break;
         }
-
         const imgEl = card.querySelector('img');
         const img = imgEl?.getAttribute('data-src') || imgEl?.getAttribute('src') || '';
         const link = card.querySelector('a[href]')?.href || '';
-
         return {
           name: name || `Producto ${index + 1}`,
           price: price || 'Sin precio',
-          img,
-          link,
+          img, link,
           extracted_at: new Date().toISOString()
         };
-      } catch {
-        return null;
-      }
+      } catch { return null; }
     }).filter(p => p);
   }, SELECTORS.PRODUCT_CARD, SELECTORS.NAME_SELECTORS, SELECTORS.PRICE_SELECTORS);
 }
 
 async function clickNextIfAny(page) {
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight - 500));
+  await randomSleep(150, 300);
+
   for (const sel of SELECTORS.NEXT_BUTTONS) {
     try {
       const btn = await page.$(sel);
       if (btn) {
-        await btn.scrollIntoView();
-        await sleep(500);
-        await Promise.all([
-          btn.click(),
-          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {})
-        ]);
-        await sleep(1500);
-        return true;
+        const isClickable = await page.evaluate((el) => {
+          const style = window.getComputedStyle(el);
+          return style.display !== 'none' && style.visibility !== 'hidden' && !el.classList.contains('is-disabled');
+        }, btn);
+
+        if (isClickable) {
+          await btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          await randomSleep(400, 600);
+          
+          const oldProducts = await page.evaluate((s) => document.querySelectorAll(s).length, SELECTORS.PRODUCT_CARD);
+          await btn.click();
+          
+          try {
+            await page.waitForFunction((old, s) => document.querySelectorAll(s).length !== old, { timeout: 6000 }, oldProducts, SELECTORS.PRODUCT_CARD);
+          } catch {
+            await randomSleep(800, 1200);
+          }
+          
+          return true;
+        }
       }
     } catch {
       await handleCheckIfBlocked(page);
@@ -156,6 +173,7 @@ async function clickNextIfAny(page) {
 async function scrapeSearchTerm(browser, categoryName, searchTerm) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 900 });
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
   const results = [];
   try {
@@ -199,6 +217,8 @@ async function main() {
       for (const term of terms) {
         const found = await scrapeSearchTerm(browser, category, term);
         allResults.push(...found);
+        
+        await randomSleep(700, 1200);
       }
     }
 
@@ -208,7 +228,7 @@ async function main() {
     
     console.log(`\nCompletado! Guardado en ${filename}`);
   } catch (error) {
-    console.error('Error durante el proceso principal:', error);
+    console.error('Error general:', error);
   } finally {
     console.log('Cerrando navegador...');
     await browser.close();
